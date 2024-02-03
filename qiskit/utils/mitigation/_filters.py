@@ -29,7 +29,6 @@ import numpy as np
 
 import qiskit
 from qiskit import QiskitError
-from qiskit.tools import parallel_map
 from qiskit.utils.mitigation.circuits import count_keys
 from qiskit.utils.deprecation import deprecate_func
 
@@ -44,6 +43,7 @@ class MeasurementFilter:
     """
 
     @deprecate_func(
+        removal_timeline="in the Qiskit 1.0 release",
         since="0.24.0",
         package_name="qiskit-terra",
         additional_msg="For code migration guidelines, visit https://qisk.it/qi_migration.",
@@ -112,6 +112,7 @@ class MeasurementFilter:
         """
         from scipy.optimize import minimize
         from scipy import linalg as la
+        from qiskit.utils.parallel import parallel_map  # pylint: disable=cyclic-import
 
         # check forms of raw_data
         if isinstance(raw_data, dict):
@@ -227,6 +228,7 @@ class TensoredFilter:
     """
 
     @deprecate_func(
+        removal_timeline="in the Qiskit 1.0 release",
         since="0.24.0",
         package_name="qiskit-terra",
         additional_msg="For code migration guidelines, visit https://qisk.it/qi_migration.",
@@ -365,6 +367,7 @@ class TensoredFilter:
         """
         from scipy.optimize import minimize
         from scipy import linalg as la
+        from .. import parallel_map  # pylint: disable=cyclic-import
 
         all_states = count_keys(self.nqubits)
         num_of_states = 2**self.nqubits
