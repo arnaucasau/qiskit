@@ -1,16 +1,15 @@
 use ndarray::Array;
 use std::time::Instant;
-use faer::{Mat};
-//use faer::{Mat, Parallelism};
-//use faer::modules::core::mul::matmul;
+use faer::{Mat, Parallelism};
+use faer::modules::core::mul::matmul;
 use num_complex::Complex64;
 
 use rand::distributions::{Distribution, Uniform};
 
 use std::env;
 
-//const ALPHA: Complex64 = Complex64::new(0.5,3.);
-//const BETA: Complex64 = Complex64::new(1.,1.);
+const ALPHA: Complex64 = Complex64::new(1.,1.);
+const BETA: Complex64 = Complex64::new(0.5,3.);
 const N: u32 = 1000;
 
 fn rand_num()-> f64{
@@ -22,23 +21,29 @@ fn rand_num()-> f64{
 
 fn ndarray_mat_mul(size: usize){
     let a: Array<Complex64,_> = Array::from_elem((size, size), Complex64::new(rand_num(), rand_num()));
-    let mut b: Array<Complex64,_> = Array::from_elem((size, size), Complex64::new(rand_num(), rand_num()));
-    
+    let b: Array<Complex64,_> = Array::from_elem((size, size), Complex64::new(rand_num(), rand_num()));
+    let mut dst: Array<Complex64,_> = Array::zeros([size, size]);
+
     let start = Instant::now();
     for _ in 0..N {
-        b = a.dot(&b);
+        dst = ALPHA * dst + BETA * a.dot(&b);
+
+        //dst = a.dot(&b);
     }
     println!("Elapsed time ndarray: {:.2?}", start.elapsed()/N);
 }
 
 fn faer_mat_mul(size: usize){
     let a = Mat::<Complex64>::from_fn(size, size, |_, _| Complex64::new(rand_num(), rand_num()));
-    let mut b = Mat::<Complex64>::from_fn(size, size, |_, _| Complex64::new(rand_num(), rand_num()));
+    let b = Mat::<Complex64>::from_fn(size, size, |_, _| Complex64::new(rand_num(), rand_num()));
+    let mut dst = Mat::<Complex64>::zeros(size, size);
     
     let start = Instant::now();
     for _ in 0..N {
-        //matmul(b.as_mut(), a.as_ref(), a.as_ref(), Some(ALPHA), BETA, Parallelism::None);
-        b = &a * &b;
+        // matmul -> dst = ALPHA * dst + BETA * &a * &b;
+        matmul(dst.as_mut(), a.as_ref(), b.as_ref(), Some(ALPHA), BETA, Parallelism::None);
+
+        //dst = &a * &b;
     }
     println!("Elapsed time faer: {:.2?}", start.elapsed()/N);
 }
