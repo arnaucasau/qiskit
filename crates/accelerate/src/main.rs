@@ -69,3 +69,28 @@ fn main(){
     ndarray_mat_mul(size);
     faer_mat_mul(size);
 }
+
+/*
+After 100 executions:
+
+4x4 matrices:
+    ndarray:
+        min: 402ns
+        avg: 467.4ns
+        max: 781ns
+
+    faer:
+        min: 78ns
+        avg: 93.83ns
+        max: 288ns
+
+All times at:
+    ndarray-4.txt: 4x4 matrix 
+    faer-4.txt: 4x4 matrix
+    
+	ndarray-8.txt: 8x8 matrix
+    faer-8.txt: 8x8 matrix
+
+	ndarray-16.txt: 16x16 matrix
+    faer-16.txt: 16x16 matrix
+*/
