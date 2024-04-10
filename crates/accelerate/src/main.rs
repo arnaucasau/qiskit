@@ -55,6 +55,12 @@ fn faer_mat_mul(){
     println!("{:.2?}", start.elapsed()/ITERATIONS);
 }
 
+/*
+Argument expected:
+    1 -> Runs matrix multiplication using ndarray
+    2 -> Runs matrix multiplication using faer
+    3 -> Runs matrix multiplication using, first ndarray, and then faer
+*/
 fn main(){
     let args: Vec<String> = env::args().collect();
     let arg = match args.get(1) {
