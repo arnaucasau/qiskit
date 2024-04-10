@@ -12,7 +12,7 @@ const ALPHA: Complex64 = Complex64::new(1.,0.);
 const BETA: Complex64 = Complex64::new(0.5,0.5);
 
 const ITERATIONS: u32 = 1000;
-const N: usize = 8; // size of the matrices
+const N: usize = 4; // size of the matrices
 
 
 fn rand_num()-> f64{
