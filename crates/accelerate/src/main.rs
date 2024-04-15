@@ -68,9 +68,10 @@ fn ndarray_kron_test() {
     let a_aview = aview2(&data_a_aview);
     let data_b_aview: [[Complex64; N]; N] = [[Complex64::new(rand_num(), rand_num()); N]; N];
     let b_aview = aview2(&data_b_aview);
+    let mut _dst: Array<Complex64, _> = Array::zeros([N, N]);
 
     let start = Instant::now();
-    _ = ndarray_kron(&a_aview, &b_aview);
+    _dst = ndarray_kron(&a_aview, &b_aview);
 
     println!("{:.2?}", start.elapsed());
 }
