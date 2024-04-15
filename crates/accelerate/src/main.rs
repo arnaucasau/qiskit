@@ -1,8 +1,10 @@
+use faer::modules::core::kron as faer_kron;
 use faer::modules::core::mul::matmul;
 use faer::{Mat, Parallelism};
 use ndarray::prelude::aview2;
 use ndarray::Array;
 use num_complex::Complex64;
+use numpy::ndarray::linalg::kron as ndarray_kron;
 use rand::distributions::{Distribution, Uniform};
 use std::time::Instant;
 
@@ -61,6 +63,29 @@ fn faer_mat_mul() {
     println!("{:.2?}", start.elapsed() / ITERATIONS);
 }
 
+fn ndarray_kron_test() {
+    let data_a_aview: [[Complex64; N]; N] = [[Complex64::new(rand_num(), rand_num()); N]; N];
+    let a_aview = aview2(&data_a_aview);
+    let data_b_aview: [[Complex64; N]; N] = [[Complex64::new(rand_num(), rand_num()); N]; N];
+    let b_aview = aview2(&data_b_aview);
+
+    let start = Instant::now();
+    _ = ndarray_kron(&a_aview, &b_aview);
+
+    println!("{:.2?}", start.elapsed());
+}
+
+fn faer_kron_test() {
+    let a = Mat::<Complex64>::from_fn(N, N, |_, _| Complex64::new(rand_num(), rand_num()));
+    let b = Mat::<Complex64>::from_fn(N, N, |_, _| Complex64::new(rand_num(), rand_num()));
+    let mut dst = Mat::<Complex64>::zeros(N * N, N * N);
+
+    let start = Instant::now();
+    faer_kron(dst.as_mut(), a.as_ref(), b.as_ref());
+
+    println!("{:.2?}", start.elapsed());
+}
+
 /*
 Argument expected:
     1 -> Runs matrix multiplication using ndarray
@@ -87,9 +112,11 @@ fn main() {
 
     if method == 1 || method == 3 {
         ndarray_mat_mul();
+        ndarray_kron_test();
     }
 
     if method == 2 || method == 3 {
         faer_mat_mul();
+        faer_kron_test();
     }
 }
