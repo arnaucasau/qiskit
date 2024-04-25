@@ -1,19 +1,16 @@
-use faer::modules::core::kron as faer_kron;
 use faer::modules::core::mul::matmul;
 use faer::{Mat, Parallelism};
 use ndarray::prelude::aview2;
 use ndarray::Array;
 use num_complex::Complex64;
-use numpy::ndarray::linalg::kron as ndarray_kron;
 use rand::distributions::{Distribution, Uniform};
 use std::time::Instant;
-
+use std::mem::swap;
 use std::env;
 
 const ALPHA: Complex64 = Complex64::new(1., 0.);
-const BETA: Complex64 = Complex64::new(0.5, 0.5);
 
-const ITERATIONS: u32 = 1000;
+const ITERATIONS: u32 = 5;
 const N: usize = 4; // size of the matrices
 
 fn rand_num() -> f64 {
@@ -26,73 +23,68 @@ fn rand_num() -> f64 {
 fn ndarray_mat_mul() {
     let data_a_aview: [[Complex64; N]; N] = [[Complex64::new(rand_num(), rand_num()); N]; N];
     let a_aview = aview2(&data_a_aview);
-    let data_b_aview: [[Complex64; N]; N] = [[Complex64::new(rand_num(), rand_num()); N]; N];
-    let b_aview = aview2(&data_b_aview);
 
-    let mut dst: Array<Complex64, _> = Array::zeros([N, N]);
+    let mut dst: Array<Complex64, _> = Array::from_shape_fn((N, N), |_| Complex64::new(rand_num(), rand_num()));
 
     let start = Instant::now();
     for _ in 0..ITERATIONS {
-        // Equivalence of the faer's matmul using dot
-        dst = ALPHA * dst + BETA * a_aview.dot(&b_aview);
+        dst = a_aview.dot(&dst);
     }
 
-    //println!("Elapsed time ndarray: {:.2?}", start.elapsed()/ITERATIONS);
-    println!("{:.2?}", start.elapsed() / ITERATIONS);
+    println!("{:.2?}", start.elapsed());
 }
 
-fn faer_mat_mul() {
+fn faer_mul() {
     let a = Mat::<Complex64>::from_fn(N, N, |_, _| Complex64::new(rand_num(), rand_num()));
-    let b = Mat::<Complex64>::from_fn(N, N, |_, _| Complex64::new(rand_num(), rand_num()));
-    let mut dst = Mat::<Complex64>::zeros(N, N);
+    let mut dst = Mat::<Complex64>::from_fn(N, N, |_, _| Complex64::new(rand_num(), rand_num()));
 
     let start = Instant::now();
     for _ in 0..ITERATIONS {
-        // matmul -> dst = ALPHA * dst + BETA * &a * &b;
+        dst = a.as_ref() * dst.as_ref();
+    }
+
+    println!("{:.2?}", start.elapsed());
+}
+fn faer_mat_mul_clone() {
+    let a = Mat::<Complex64>::from_fn(N, N, |_, _| Complex64::new(rand_num(), rand_num()));
+    let mut dst = Mat::<Complex64>::from_fn(N, N, |_, _| Complex64::new(rand_num(), rand_num()));
+
+    let start = Instant::now();
+    for _ in 0..ITERATIONS {
+        let aux = dst.clone();
         matmul(
             dst.as_mut(),
             a.as_ref(),
-            b.as_ref(),
-            Some(ALPHA),
-            BETA,
+            aux.as_ref(),
+            None,
+            ALPHA,
             Parallelism::None,
         );
     }
 
-    //println!("Elapsed time faer: {:.2?}", start.elapsed()/ITERATIONS);
-    println!("{:.2?}", start.elapsed() / ITERATIONS);
-}
-
-fn ndarray_kron_test() {
-    let data_a_aview: [[Complex64; N]; N] = [[Complex64::new(rand_num(), rand_num()); N]; N];
-    let a_aview = aview2(&data_a_aview);
-    let data_b_aview: [[Complex64; N]; N] = [[Complex64::new(rand_num(), rand_num()); N]; N];
-    let b_aview = aview2(&data_b_aview);
-    let mut _dst: Array<Complex64, _> = Array::zeros([N, N]);
-
-    let start = Instant::now();
-    _dst = ndarray_kron(&a_aview, &b_aview);
-
     println!("{:.2?}", start.elapsed());
 }
-
-fn faer_kron_test() {
+fn faer_mat_mul_swap() {
     let a = Mat::<Complex64>::from_fn(N, N, |_, _| Complex64::new(rand_num(), rand_num()));
-    let b = Mat::<Complex64>::from_fn(N, N, |_, _| Complex64::new(rand_num(), rand_num()));
-    let mut dst = Mat::<Complex64>::zeros(N * N, N * N);
+    let mut dst = Mat::<Complex64>::from_fn(N, N, |_, _| Complex64::new(rand_num(), rand_num()));
 
     let start = Instant::now();
-    faer_kron(dst.as_mut(), a.as_ref(), b.as_ref());
+    let mut aux = Mat::zeros(4, 4);
+    for _ in 0..ITERATIONS {
+        matmul(
+            aux.as_mut(),
+            a.as_ref(),
+            dst.as_ref(),
+            None,
+            ALPHA,
+            Parallelism::None,
+        );
+        swap(&mut aux, &mut dst);
+    }
 
     println!("{:.2?}", start.elapsed());
 }
 
-/*
-Argument expected:
-    1 -> Runs matrix multiplication using ndarray
-    2 -> Runs matrix multiplication using faer
-    3 -> Runs matrix multiplication using, first ndarray, and then faer
-*/
 fn main() {
     let args: Vec<String> = env::args().collect();
     let arg = match args.get(1) {
@@ -111,13 +103,19 @@ fn main() {
         }
     };
 
-    if method == 1 || method == 3 {
+    if method == 1 || method == 5 {
         ndarray_mat_mul();
-        ndarray_kron_test();
     }
 
-    if method == 2 || method == 3 {
-        faer_mat_mul();
-        faer_kron_test();
+    if method == 2 || method == 5 {
+        faer_mul();
+    }
+
+    if method == 3 || method == 5 {
+        faer_mat_mul_clone();
+    }
+
+    if method == 4 || method == 5 {
+        faer_mat_mul_swap();
     }
 }
