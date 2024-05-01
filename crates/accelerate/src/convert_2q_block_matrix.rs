@@ -19,19 +19,14 @@ use numpy::ndarray::{aview2, Array2, ArrayView2};
 use numpy::{IntoPyArray, PyArray2, PyReadonlyArray2};
 use smallvec::SmallVec;
 
-use faer::modules::core::mul::matmul;
 use faer::modules::core::kron;
+use faer::modules::core::mul::matmul;
 use faer::perm::swap_rows;
 use faer::prelude::*;
-use faer::{Mat, Parallelism};
+use faer::{mat, Mat, Parallelism};
 use faer_ext::{IntoFaerComplex, IntoNdarrayComplex};
 
 use std::mem::swap;
-
-static ONE_QUBIT_IDENTITY: [[Complex64; 2]; 2] = [
-    [Complex64::new(1., 0.), Complex64::new(0., 0.)],
-    [Complex64::new(0., 0.), Complex64::new(1., 0.)],
-];
 
 /// Return the matrix Operator resulting from a block of Instructions.
 #[pyfunction]
@@ -40,12 +35,11 @@ pub fn blocks_to_matrix(
     py: Python,
     op_list: Vec<(PyReadonlyArray2<Complex64>, SmallVec<[u8; 2]>)>,
 ) -> PyResult<Py<PyArray2<Complex64>>> {
-    let identity = aview2(&ONE_QUBIT_IDENTITY).into_faer_complex();
     let input_matrix = op_list[0].0.as_array().into_faer_complex();
 
     let mut matrix = match op_list[0].1.as_slice() {
-        [0] => my_kron(identity, input_matrix),
-        [1] => my_kron(input_matrix,identity),
+        [0] => kron_identity_x_matrix(input_matrix),
+        [1] => kron_matrix_x_identity(input_matrix),
         [0, 1] => input_matrix.to_owned(),
         [1, 0] => change_basis_faer(input_matrix),
         [] => Mat::<c64>::identity(4, 4),
@@ -61,8 +55,8 @@ pub fn blocks_to_matrix(
         let op_matrix = op_matrix.as_array().into_faer_complex();
 
         let result = match q_list.as_slice() {
-            [0] => Some(my_kron(identity,op_matrix)),
-            [1] => Some(my_kron(op_matrix, identity)),
+            [0] => Some(kron_identity_x_matrix(op_matrix)),
+            [1] => Some(kron_matrix_x_identity(op_matrix)),
             [1, 0] => Some(change_basis_faer(op_matrix)),
             [] => Some(Mat::<c64>::identity(4, 4)),
             _ => None,
@@ -91,11 +85,25 @@ pub fn blocks_to_matrix(
 }
 
 #[inline]
-fn my_kron(lhs: MatRef<c64>, rhs: MatRef<c64>)-> Mat<c64> {
-    let mut aux = Mat::<c64>::with_capacity(4, 4);
-    unsafe { aux.set_dims(4, 4) };
-    kron(aux.as_mut(), lhs, rhs);
-    aux
+fn kron_matrix_x_identity(lhs: MatRef<c64>) -> Mat<c64> {
+    let zero: c64 = c64::new(0., 0.);
+    mat![
+        [lhs[(0, 0)], zero, lhs[(0, 1)], zero],
+        [zero, lhs[(0, 0)], zero, lhs[(0, 1)]],
+        [lhs[(1, 0)], zero, lhs[(1, 1)], zero],
+        [zero, lhs[(1, 0)], zero, lhs[(1, 1)]],
+    ]
+}
+
+#[inline]
+fn kron_identity_x_matrix(rhs: MatRef<c64>) -> Mat<c64> {
+    let zero: c64 = c64::new(0., 0.);
+    mat![
+        [rhs[(0, 0)], rhs[(0, 1)], zero, zero],
+        [rhs[(1, 0)], rhs[(1, 1)], zero, zero],
+        [zero, zero, rhs[(0, 0)], rhs[(0, 1)]],
+        [zero, zero, rhs[(1, 0)], rhs[(1, 1)]],
+    ]
 }
 
 /// Switches the order of qubits in a two qubit operation.
