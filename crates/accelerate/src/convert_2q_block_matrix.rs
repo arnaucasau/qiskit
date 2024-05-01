@@ -20,6 +20,7 @@ use numpy::{IntoPyArray, PyArray2, PyReadonlyArray2};
 use smallvec::SmallVec;
 
 use faer::modules::core::mul::matmul;
+use faer::modules::core::kron;
 use faer::perm::swap_rows;
 use faer::prelude::*;
 use faer::{Mat, Parallelism};
@@ -43,8 +44,8 @@ pub fn blocks_to_matrix(
     let input_matrix = op_list[0].0.as_array().into_faer_complex();
 
     let mut matrix = match op_list[0].1.as_slice() {
-        [0] => identity.kron(input_matrix),
-        [1] => input_matrix.kron(identity),
+        [0] => my_kron(identity, input_matrix),
+        [1] => my_kron(input_matrix,identity),
         [0, 1] => input_matrix.to_owned(),
         [1, 0] => change_basis_faer(input_matrix),
         [] => Mat::<c64>::identity(4, 4),
@@ -60,8 +61,8 @@ pub fn blocks_to_matrix(
         let op_matrix = op_matrix.as_array().into_faer_complex();
 
         let result = match q_list.as_slice() {
-            [0] => Some(identity.kron(op_matrix)),
-            [1] => Some(op_matrix.kron(identity)),
+            [0] => Some(my_kron(identity,op_matrix)),
+            [1] => Some(my_kron(op_matrix, identity)),
             [1, 0] => Some(change_basis_faer(op_matrix)),
             [] => Some(Mat::<c64>::identity(4, 4)),
             _ => None,
@@ -87,6 +88,14 @@ pub fn blocks_to_matrix(
         .to_owned()
         .into_pyarray_bound(py)
         .unbind())
+}
+
+#[inline]
+fn my_kron(lhs: MatRef<c64>, rhs: MatRef<c64>)-> Mat<c64> {
+    let mut aux = Mat::<c64>::with_capacity(4, 4);
+    unsafe { aux.set_dims(4, 4) };
+    kron(aux.as_mut(), lhs, rhs);
+    aux
 }
 
 /// Switches the order of qubits in a two qubit operation.
