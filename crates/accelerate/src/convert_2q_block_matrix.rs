@@ -38,8 +38,8 @@ pub fn blocks_to_matrix(
     let input_matrix = op_list[0].0.as_array().into_faer_complex();
 
     let mut matrix = match op_list[0].1.as_slice() {
-        [0] => kron_identity_x_matrix(input_matrix),
-        [1] => kron_matrix_x_identity(input_matrix),
+        [0] => kron_identity_x_matrix_alloc(input_matrix),
+        [1] => kron_matrix_x_identity_alloc(input_matrix),
         [0, 1] => input_matrix.to_owned(),
         [1, 0] => change_basis_faer(input_matrix),
         [] => Mat::<c64>::identity(4, 4),
@@ -47,33 +47,41 @@ pub fn blocks_to_matrix(
     };
 
     let mut aux = Mat::<c64>::with_capacity(4, 4);
+    let mut aux2 = Mat::<c64>::with_capacity(4, 4);
     // SAFETY: `aux` is a 4x4 matrix whose values are uninitialized and it's used only to store the
     // result of the `matmul` call inside the for loop
-    unsafe { aux.set_dims(4, 4) };
-
+    unsafe {
+        aux.set_dims(4, 4);
+        aux2.set_dims(4, 4);
+    };
     for (op_matrix, q_list) in op_list.into_iter().skip(1) {
         let op_matrix = op_matrix.as_array().into_faer_complex();
 
-        let result = match q_list.as_slice() {
-            [0] => Some(kron_identity_x_matrix(op_matrix)),
-            [1] => Some(kron_matrix_x_identity(op_matrix)),
-            [1, 0] => Some(change_basis_faer(op_matrix)),
-            [] => Some(Mat::<c64>::identity(4, 4)),
-            _ => None,
+        match q_list.as_slice() {
+            [0] => {
+                kron_identity_x_matrix(&mut aux2, op_matrix);
+                matmul_to_dst(&mut aux, aux2.as_ref(), matrix.as_ref());
+                swap(&mut aux, &mut matrix);
+            }
+            [1] => {
+                kron_matrix_x_identity(&mut aux2, op_matrix);
+                matmul_to_dst(&mut aux, aux2.as_ref(), matrix.as_ref());
+                swap(&mut aux, &mut matrix);
+            }
+            [1, 0] => {
+                matmul_to_dst(
+                    &mut aux,
+                    change_basis_faer(op_matrix).as_ref(),
+                    matrix.as_ref(),
+                );
+                swap(&mut aux, &mut matrix);
+            }
+            [] => (),
+            _ => {
+                matmul_to_dst(&mut aux, op_matrix, matrix.as_ref());
+                swap(&mut aux, &mut matrix);
+            }
         };
-
-        matmul(
-            aux.as_mut(),
-            result.as_ref().map(|x| x.as_ref()).unwrap_or(op_matrix),
-            matrix.as_ref(),
-            None,
-            c64::new(1., 0.),
-            Parallelism::None,
-        );
-
-        // Swap values between `aux` and `matrix` to store the result of the `matmul` call
-        // in the matrix `matrix` and prepare it for a possible new iteration of the for loop
-        swap(&mut aux, &mut matrix);
     }
 
     Ok(matrix
@@ -85,7 +93,19 @@ pub fn blocks_to_matrix(
 }
 
 #[inline]
-fn kron_matrix_x_identity(lhs: MatRef<c64>) -> Mat<c64> {
+fn matmul_to_dst(dst: &mut Mat<c64>, lhs: MatRef<c64>, rhs: MatRef<c64>) {
+    matmul(
+        dst.as_mut(),
+        lhs,
+        rhs,
+        None,
+        c64::new(1., 0.),
+        Parallelism::None,
+    );
+}
+
+#[inline]
+fn kron_matrix_x_identity_alloc(lhs: MatRef<c64>) -> Mat<c64> {
     let zero: c64 = c64::new(0., 0.);
     mat![
         [lhs[(0, 0)], zero, lhs[(0, 1)], zero],
@@ -96,14 +116,72 @@ fn kron_matrix_x_identity(lhs: MatRef<c64>) -> Mat<c64> {
 }
 
 #[inline]
-fn kron_identity_x_matrix(rhs: MatRef<c64>) -> Mat<c64> {
+fn kron_identity_x_matrix_alloc(lhs: MatRef<c64>) -> Mat<c64> {
     let zero: c64 = c64::new(0., 0.);
     mat![
-        [rhs[(0, 0)], rhs[(0, 1)], zero, zero],
-        [rhs[(1, 0)], rhs[(1, 1)], zero, zero],
-        [zero, zero, rhs[(0, 0)], rhs[(0, 1)]],
-        [zero, zero, rhs[(1, 0)], rhs[(1, 1)]],
+        [lhs[(0, 0)], lhs[(0, 1)], zero, zero],
+        [lhs[(1, 0)], lhs[(1, 1)], zero, zero],
+        [zero, zero, lhs[(0, 0)], lhs[(0, 1)]],
+        [zero, zero, lhs[(1, 0)], lhs[(1, 1)]],
     ]
+}
+
+#[inline]
+fn kron_matrix_x_identity(output: &mut Mat<c64>, oneq_mat: MatRef<c64>) {
+    let _zero = c64::new(0., 0.);
+    (
+        output[(0, 0)],
+        output[(0, 1)],
+        output[(0, 2)],
+        output[(0, 3)],
+    ) = (oneq_mat[(0, 0)], _zero, oneq_mat[(0, 1)], _zero);
+    (
+        output[(1, 0)],
+        output[(1, 1)],
+        output[(1, 2)],
+        output[(1, 3)],
+    ) = (_zero, oneq_mat[(0, 0)], _zero, oneq_mat[(0, 1)]);
+    (
+        output[(2, 0)],
+        output[(2, 1)],
+        output[(2, 2)],
+        output[(2, 3)],
+    ) = (oneq_mat[(1, 0)], _zero, oneq_mat[(1, 1)], _zero);
+    (
+        output[(3, 0)],
+        output[(3, 1)],
+        output[(3, 2)],
+        output[(3, 3)],
+    ) = (_zero, oneq_mat[(1, 0)], _zero, oneq_mat[(1, 1)]);
+}
+
+#[inline]
+fn kron_identity_x_matrix(output: &mut Mat<c64>, oneq_mat: MatRef<c64>) {
+    let _zero = c64::new(0., 0.);
+    (
+        output[(0, 0)],
+        output[(0, 1)],
+        output[(0, 2)],
+        output[(0, 3)],
+    ) = (oneq_mat[(0, 0)], oneq_mat[(0, 1)], _zero, _zero);
+    (
+        output[(1, 0)],
+        output[(1, 1)],
+        output[(1, 2)],
+        output[(1, 3)],
+    ) = (oneq_mat[(1, 0)], oneq_mat[(1, 1)], _zero, _zero);
+    (
+        output[(2, 0)],
+        output[(2, 1)],
+        output[(2, 2)],
+        output[(2, 3)],
+    ) = (_zero, _zero, oneq_mat[(0, 0)], oneq_mat[(0, 1)]);
+    (
+        output[(3, 0)],
+        output[(3, 1)],
+        output[(3, 2)],
+        output[(3, 3)],
+    ) = (_zero, _zero, oneq_mat[(1, 0)], oneq_mat[(1, 1)]);
 }
 
 /// Switches the order of qubits in a two qubit operation.
