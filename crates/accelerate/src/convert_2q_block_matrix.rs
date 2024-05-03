@@ -15,11 +15,10 @@ use pyo3::wrap_pyfunction;
 use pyo3::Python;
 
 use num_complex::Complex64;
-use numpy::ndarray::{aview2, Array2, ArrayView2};
+use numpy::ndarray::{Array2, ArrayView2};
 use numpy::{IntoPyArray, PyArray2, PyReadonlyArray2};
 use smallvec::SmallVec;
 
-use faer::modules::core::kron;
 use faer::modules::core::mul::matmul;
 use faer::perm::swap_rows;
 use faer::prelude::*;
@@ -116,13 +115,13 @@ fn kron_matrix_x_identity_alloc(lhs: MatRef<c64>) -> Mat<c64> {
 }
 
 #[inline]
-fn kron_identity_x_matrix_alloc(lhs: MatRef<c64>) -> Mat<c64> {
+fn kron_identity_x_matrix_alloc(rhs: MatRef<c64>) -> Mat<c64> {
     let zero: c64 = c64::new(0., 0.);
     mat![
-        [lhs[(0, 0)], lhs[(0, 1)], zero, zero],
-        [lhs[(1, 0)], lhs[(1, 1)], zero, zero],
-        [zero, zero, lhs[(0, 0)], lhs[(0, 1)]],
-        [zero, zero, lhs[(1, 0)], lhs[(1, 1)]],
+        [rhs[(0, 0)], rhs[(0, 1)], zero, zero],
+        [rhs[(1, 0)], rhs[(1, 1)], zero, zero],
+        [zero, zero, rhs[(0, 0)], rhs[(0, 1)]],
+        [zero, zero, rhs[(1, 0)], rhs[(1, 1)]],
     ]
 }
 
