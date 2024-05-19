@@ -87,6 +87,7 @@ class BackendV1(Backend, ABC):
             methods; changing that behaviour would have annoying knock-on effects through all the
             rest of the documentation, so instead we just hard-code the automethod directive.
 
+	.. automethod:: _default_options
         """
         self._configuration = configuration
         self._options = self._default_options()
@@ -309,6 +310,7 @@ class BackendV2(Backend, ABC):
     Subclasses of this should override the public method :meth:`run` and the internal
     :meth:`_default_options`.
 
+    .. automethod:: _default_options
     """
 
     version = 2
