@@ -29,23 +29,26 @@ use smallvec::{smallvec, SmallVec};
 use std::f64::consts::{FRAC_1_SQRT_2, PI};
 use std::ops::Deref;
 
+use crate::common::{
+    change_basis_ndarray, matmul_to_dst, ndarray_kron_identity_x_matrix,
+    ndarray_kron_matrix_x_identity,
+};
 use faer::Side::Lower;
 use faer::{prelude::*, scale, ComplexField, Mat, MatRef};
 use faer_ext::{IntoFaer, IntoFaerComplex, IntoNdarray, IntoNdarrayComplex};
-use ndarray::linalg::kron;
 use ndarray::prelude::*;
 use ndarray::Zip;
 use numpy::PyReadonlyArray2;
 use numpy::{IntoPyArray, ToPyArray};
 use pyo3::pybacked::PyBackedStr;
 
-use crate::convert_2q_block_matrix::change_basis;
 use crate::euler_one_qubit_decomposer::{
     angles_from_unitary, det_one_qubit, unitary_to_gate_sequence_inner, EulerBasis,
     OneQubitGateSequence, ANGLE_ZERO_EPSILON,
 };
 use crate::utils;
 use crate::QiskitError;
+use std::mem::swap;
 
 use rand::prelude::*;
 use rand_distr::StandardNormal;
@@ -124,24 +127,33 @@ enum MagicBasisTransform {
     OutOf,
 }
 
-fn magic_basis_transform(
-    unitary: ArrayView2<Complex64>,
-    direction: MagicBasisTransform,
-) -> Array2<Complex64> {
-    let _b_nonnormalized = aview2(&B_NON_NORMALIZED);
-    let _b_nonnormalized_dagger = aview2(&B_NON_NORMALIZED_DAGGER);
+fn magic_basis_transform(unitary: MatRef<c64>, direction: MagicBasisTransform) -> Mat<c64> {
+    let _b_nonnormalized = aview2(&B_NON_NORMALIZED).into_faer_complex();
+    let _b_nonnormalized_dagger = aview2(&B_NON_NORMALIZED_DAGGER).into_faer_complex();
+
+    let mut result = Mat::<c64>::with_capacity(4, 4);
+    let mut aux = Mat::<c64>::with_capacity(4, 4);
+    // SAFETY: `aux` is a 4x4 matrix whose values are uninitialized and it's used only to store the
+    // result of the `matmul` call inside the for loop
+    unsafe {
+        result.set_dims(4, 4);
+        aux.set_dims(4, 4)
+    };
     match direction {
-        MagicBasisTransform::OutOf => _b_nonnormalized_dagger.dot(&unitary).dot(&_b_nonnormalized),
-        MagicBasisTransform::Into => _b_nonnormalized.dot(&unitary).dot(&_b_nonnormalized_dagger),
-    }
+        MagicBasisTransform::OutOf => {
+            matmul_to_dst(aux.as_mut(), _b_nonnormalized_dagger, unitary);
+            matmul_to_dst(result.as_mut(), aux.as_ref(), _b_nonnormalized);
+        }
+        MagicBasisTransform::Into => {
+            matmul_to_dst(aux.as_mut(), _b_nonnormalized, unitary);
+            matmul_to_dst(result.as_mut(), aux.as_ref(), _b_nonnormalized_dagger);
+        }
+    };
+    result
 }
 
-fn transform_from_magic_basis(u: Mat<c64>) -> Mat<c64> {
-    let unitary: ArrayView2<Complex64> = u.as_ref().into_ndarray_complex();
-    magic_basis_transform(unitary, MagicBasisTransform::OutOf)
-        .view()
-        .into_faer_complex()
-        .to_owned()
+fn transform_from_magic_basis(unitary: Mat<c64>) -> Mat<c64> {
+    magic_basis_transform(unitary.as_ref(), MagicBasisTransform::OutOf)
 }
 
 // faer::c64 and num_complex::Complex<f64> are both structs
@@ -208,10 +220,24 @@ fn decompose_two_qubit_product_gate(
     }
     r.mapv_inplace(|x| x / det_r.sqrt());
     let r_t_conj: Array2<Complex64> = transpose_conjugate(r.view());
-    let eye = aview2(&ONE_QUBIT_IDENTITY);
-    let mut temp = kron(&eye, &r_t_conj);
-    temp = special_unitary.dot(&temp);
-    let mut l = temp.slice(s![..;2, ..;2]).to_owned();
+    let temp = ndarray_kron_identity_x_matrix(r_t_conj.view());
+
+    let mut result = Mat::<c64>::with_capacity(4, 4);
+    // SAFETY: `aux` is a 4x4 matrix whose values are uninitialized and it's used only to store the
+    // result of the `matmul` call inside the for loop
+    unsafe { result.set_dims(4, 4) };
+
+    matmul_to_dst(
+        result.as_mut(),
+        special_unitary.into_faer_complex(),
+        temp.view().into_faer_complex(),
+    );
+
+    let mut l = result
+        .as_ref()
+        .into_ndarray_complex()
+        .slice(s![..;2, ..;2])
+        .to_owned();
     let det_l = det_one_qubit(l.view());
     if det_l.abs() < 0.9 {
         return Err(QiskitError::new_err(
@@ -390,10 +416,16 @@ static XGATE: [[Complex64; 2]; 2] = [
     [Complex64::new(1., 0.), Complex64::new(0., 0.)],
 ];
 
-fn compute_unitary(sequence: &TwoQubitSequenceVec, global_phase: f64) -> Array2<Complex64> {
-    let identity = aview2(&ONE_QUBIT_IDENTITY);
-    let phase = Complex64::new(0., global_phase).exp();
-    let mut matrix = Array2::from_diag(&arr1(&[phase, phase, phase, phase]));
+fn compute_unitary(sequence: &TwoQubitSequenceVec, global_phase: f64) -> Mat<c64> {
+    let phase = c64::new(0., global_phase).exp();
+    let zero = c64::new(0., 0.);
+    let mut matrix = Mat::from_fn(4, 4, |i, j| if i == j { phase } else { zero });
+
+    let mut aux = Mat::<c64>::with_capacity(4, 4);
+    // SAFETY: `aux` is a 4x4 matrix whose values are uninitialized and it's used only to store the
+    // result of the `matmul` call inside the for loop
+    unsafe { aux.set_dims(4, 4) };
+
     sequence
         .iter()
         .map(|inst| {
@@ -412,16 +444,26 @@ fn compute_unitary(sequence: &TwoQubitSequenceVec, global_phase: f64) -> Array2<
         })
         .for_each(|(op_matrix, q_list)| {
             let result = match q_list.as_slice() {
-                [0] => Some(kron(&identity, &op_matrix)),
-                [1] => Some(kron(&op_matrix, &identity)),
-                [1, 0] => Some(change_basis(op_matrix.view())),
+                [0] => Some(ndarray_kron_identity_x_matrix(op_matrix.view())),
+                [1] => Some(ndarray_kron_matrix_x_identity(op_matrix.view())),
+                [1, 0] => Some(change_basis_ndarray(op_matrix.view())),
                 [] => Some(Array2::eye(4)),
                 _ => None,
             };
-            matrix = match result {
-                Some(result) => result.dot(&matrix),
-                None => op_matrix.dot(&matrix),
-            }
+
+            matmul_to_dst(
+                aux.as_mut(),
+                result
+                    .as_ref()
+                    .map(|x| x.view())
+                    .unwrap_or(op_matrix.view())
+                    .into_faer_complex(),
+                matrix.as_ref(),
+            );
+
+            // Swap values between `aux` and `matrix` to store the result of the `matmul` call
+            // in the matrix `matrix` and prepare it for a possible new iteration of the for loop
+            swap(&mut aux, &mut matrix);
         });
     matrix
 }
@@ -632,8 +674,12 @@ impl TwoQubitWeylDecomposition {
         let det_pow = det_u.powf(-0.25);
         u.mapv_inplace(|x| x * det_pow);
         let mut global_phase = det_u.arg() / 4.;
-        let u_p = magic_basis_transform(u.view(), MagicBasisTransform::OutOf);
-        let m2 = u_p.t().dot(&u_p);
+        let u_p = magic_basis_transform(u.view().into_faer_complex(), MagicBasisTransform::OutOf);
+        let mut m2 = Mat::<c64>::with_capacity(4, 4);
+        // SAFETY: `aux` is a 4x4 matrix whose values are uninitialized and it's used only to store the
+        // result of the `matmul` call inside the for loop
+        unsafe { m2.set_dims(4, 4) };
+        matmul_to_dst(m2.as_mut(), u_p.transpose(), u_p.as_ref());
         let default_euler_basis = EulerBasis::ZYZ;
 
         // M2 is a symmetric complex matrix. We need to decompose it as M2 = P D P^T where
@@ -652,6 +698,16 @@ impl TwoQubitWeylDecomposition {
         let mut found = false;
         let mut d: Array1<Complex64> = Array1::zeros(0);
         let mut p: Array2<Complex64> = Array2::zeros((0, 0));
+
+        let mut aux = Mat::<c64>::with_capacity(4, 4);
+        let mut aux2 = Mat::<c64>::with_capacity(4, 4);
+        // SAFETY: `aux` is a 4x4 matrix whose values are uninitialized and it's used only to store the
+        // result of the `matmul` call inside the for loop
+        unsafe {
+            aux.set_dims(4, 4);
+            aux2.set_dims(4, 4)
+        };
+
         for i in 0..100 {
             let rand_a: f64;
             let rand_b: f64;
@@ -667,7 +723,10 @@ impl TwoQubitWeylDecomposition {
                 rand_a = state.sample(StandardNormal);
                 rand_b = state.sample(StandardNormal);
             }
-            let m2_real = m2.mapv(|val| rand_a * val.re + rand_b * val.im);
+            let m2_real = m2
+                .as_ref()
+                .into_ndarray_complex()
+                .mapv(|val| rand_a * val.re + rand_b * val.im);
             let p_inner = m2_real
                 .view()
                 .into_faer()
@@ -675,7 +734,15 @@ impl TwoQubitWeylDecomposition {
                 .u()
                 .into_ndarray()
                 .mapv(Complex64::from);
-            let d_inner = p_inner.t().dot(&m2).dot(&p_inner).diag().to_owned();
+
+            matmul_to_dst(aux.as_mut(), p_inner.t().into_faer_complex(), m2.as_ref());
+            matmul_to_dst(
+                aux2.as_mut(),
+                aux.as_ref(),
+                p_inner.view().into_faer_complex(),
+            );
+            let d_inner = aux2.as_ref().into_ndarray_complex().diag().to_owned();
+
             let mut diag_d: Array2<Complex64> = Array2::zeros((4, 4));
             diag_d
                 .diag_mut()
@@ -683,8 +750,18 @@ impl TwoQubitWeylDecomposition {
                 .enumerate()
                 .for_each(|(index, x)| *x = d_inner[index]);
 
-            let compare = p_inner.dot(&diag_d).dot(&p_inner.t());
-            found = abs_diff_eq!(compare.view(), m2, epsilon = 1.0e-13);
+            matmul_to_dst(
+                aux.as_mut(),
+                p_inner.view().into_faer_complex(),
+                diag_d.view().into_faer_complex(),
+            );
+            matmul_to_dst(aux2.as_mut(), aux.as_ref(), p_inner.t().into_faer_complex());
+
+            found = abs_diff_eq!(
+                aux2.as_ref().into_ndarray_complex(),
+                m2.as_ref().into_ndarray_complex(),
+                epsilon = 1.0e-13
+            );
             if found {
                 p = p_inner;
                 d = d_inner;
@@ -724,13 +801,22 @@ impl TwoQubitWeylDecomposition {
             .iter_mut()
             .enumerate()
             .for_each(|(index, x)| *x = (C1_IM * d[index]).exp());
-        let k1 = magic_basis_transform(u_p.dot(&p).dot(&temp).view(), MagicBasisTransform::Into);
-        let k2 = magic_basis_transform(p.t(), MagicBasisTransform::Into);
+
+        matmul_to_dst(aux.as_mut(), u_p.as_ref(), p.view().into_faer_complex());
+        matmul_to_dst(aux2.as_mut(), aux.as_ref(), temp.view().into_faer_complex());
+
+        let k1 = magic_basis_transform(aux2.as_ref(), MagicBasisTransform::Into);
+        let k2 = magic_basis_transform(
+            p.view().into_faer_complex().transpose(),
+            MagicBasisTransform::Into,
+        );
 
         #[allow(non_snake_case)]
-        let (mut K1l, mut K1r, phase_l) = decompose_two_qubit_product_gate(k1.view())?;
+        let (mut K1l, mut K1r, phase_l) =
+            decompose_two_qubit_product_gate(k1.as_ref().into_ndarray_complex())?;
         #[allow(non_snake_case)]
-        let (K2l, mut K2r, phase_r) = decompose_two_qubit_product_gate(k2.view())?;
+        let (K2l, mut K2r, phase_r) =
+            decompose_two_qubit_product_gate(k2.as_ref().into_ndarray_complex())?;
         global_phase += phase_l + phase_r;
 
         // Flip into Weyl chamber
@@ -1564,7 +1650,7 @@ impl TwoQubitBasisDecomposer {
         // TODO: fix the sign problem to avoid correction here
         if abs_diff_eq!(
             target_decomposed.unitary_matrix[[0, 0]],
-            -out_unitary[[0, 0]],
+            -out_unitary.as_ref().into_ndarray_complex()[[0, 0]],
             epsilon = atol
         ) {
             global_phase += PI;
