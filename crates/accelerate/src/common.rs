@@ -109,12 +109,13 @@ pub fn change_basis_ndarray(matrix: ArrayView2<Complex64>) -> Array2<Complex64> 
 
 #[inline]
 pub fn matrix_multiply(a: ArrayView2<Complex64>, b: ArrayView2<Complex64>) -> Array2<Complex64>{
-    let mut result = Array2::uninit((4,4));
+    let dim = a.dim().0;
+    let mut result = Array2::uninit((dim,dim));
 
-    for i in 0..4 {
-        for j in 0..4 {
+    for i in 0..dim {
+        for j in 0..dim {
             let mut sum = Complex64::new(0.,0.);
-            for k in 0..4 {
+            for k in 0..dim {
                 sum += a[(i, k)] * b[(k, j)]
             }
             result[(i, j)].write(sum);
