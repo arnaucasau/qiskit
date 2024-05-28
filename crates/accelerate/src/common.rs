@@ -106,3 +106,20 @@ pub fn change_basis_ndarray(matrix: ArrayView2<Complex64>) -> Array2<Complex64> 
     }
     trans_matrix
 }
+
+#[inline]
+pub fn matrix_multiply(a: ArrayView2<Complex64>, b: ArrayView2<Complex64>) -> Array2<Complex64>{
+    let mut result = Array2::uninit((4,4));
+
+    for i in 0..4 {
+        for j in 0..4 {
+            let mut sum = Complex64::new(0.,0.);
+            for k in 0..4 {
+                sum += a[(i, k)] * b[(k, j)]
+            }
+            result[(i, j)].write(sum);
+        }
+    }
+
+    unsafe { result.assume_init() }
+}
