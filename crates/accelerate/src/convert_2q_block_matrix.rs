@@ -20,6 +20,8 @@ use numpy::ndarray::{aview2, Array2, ArrayView2};
 use numpy::{IntoPyArray, PyArray2, PyReadonlyArray2};
 use smallvec::SmallVec;
 
+use crate::common::{matrix_multiply, ndarray_kron_matrix_x_identity, ndarray_kron_identity_x_matrix};
+
 static ONE_QUBIT_IDENTITY: [[Complex64; 2]; 2] = [
     [Complex64::new(1., 0.), Complex64::new(0., 0.)],
     [Complex64::new(0., 0.), Complex64::new(1., 0.)],
@@ -35,8 +37,8 @@ pub fn blocks_to_matrix(
     let identity = aview2(&ONE_QUBIT_IDENTITY);
     let input_matrix = op_list[0].0.as_array();
     let mut matrix: Array2<Complex64> = match op_list[0].1.as_slice() {
-        [0] => kron(&identity, &input_matrix),
-        [1] => kron(&input_matrix, &identity),
+        [0] => ndarray_kron_identity_x_matrix(input_matrix.view()),
+        [1] => ndarray_kron_matrix_x_identity(input_matrix.view()),
         [0, 1] => input_matrix.to_owned(),
         [1, 0] => change_basis(input_matrix),
         [] => Array2::eye(4),
@@ -53,8 +55,8 @@ pub fn blocks_to_matrix(
             _ => None,
         };
         matrix = match result {
-            Some(result) => result.dot(&matrix),
-            None => op_matrix.dot(&matrix),
+            Some(result) => matrix_multiply(result.view(), matrix.view()),
+            None => matrix_multiply(op_matrix.view(), matrix.view()),
         };
     }
     Ok(matrix.into_pyarray_bound(py).unbind())
