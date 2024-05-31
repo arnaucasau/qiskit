@@ -39,7 +39,7 @@ use numpy::{IntoPyArray, ToPyArray};
 use pyo3::pybacked::PyBackedStr;
 
 use crate::common::{
-    change_basis, kron_identity_x_matrix, kron_matrix_x_identity,
+    change_basis, kron_identity_x_matrix, kron_matrix_x_identity, matrix_multiply_2x2,
     matrix_multiply_4x4,
 };
 use crate::euler_one_qubit_decomposer::{
@@ -639,7 +639,7 @@ impl TwoQubitWeylDecomposition {
         u.mapv_inplace(|x| x * det_pow);
         let mut global_phase = det_u.arg() / 4.;
         let u_p = magic_basis_transform(u.view(), MagicBasisTransform::OutOf);
-        let m2 = matrix_multiply_4x4(u_p.t(), u_p.view());
+        let m2 = u_p.t().dot(&u_p);
         let default_euler_basis = EulerBasis::ZYZ;
 
         // M2 is a symmetric complex matrix. We need to decompose it as M2 = P D P^T where
@@ -681,12 +681,7 @@ impl TwoQubitWeylDecomposition {
                 .u()
                 .into_ndarray()
                 .mapv(Complex64::from);
-            let d_inner = matrix_multiply_4x4(
-                matrix_multiply_4x4(p_inner.t(), m2.view()).view(),
-                p_inner.view(),
-            )
-            .diag()
-            .to_owned();
+            let d_inner = p_inner.t().dot(&m2).dot(&p_inner).diag().to_owned();
             let mut diag_d: Array2<Complex64> = Array2::zeros((4, 4));
             diag_d
                 .diag_mut()
@@ -694,10 +689,7 @@ impl TwoQubitWeylDecomposition {
                 .enumerate()
                 .for_each(|(index, x)| *x = d_inner[index]);
 
-            let compare = matrix_multiply_4x4(
-                matrix_multiply_4x4(p_inner.view(), diag_d.view()).view(),
-                p_inner.t(),
-            );
+            let compare = p_inner.dot(&diag_d).dot(&p_inner.t());
             found = abs_diff_eq!(compare.view(), m2, epsilon = 1.0e-13);
             if found {
                 p = p_inner;
@@ -738,14 +730,7 @@ impl TwoQubitWeylDecomposition {
             .iter_mut()
             .enumerate()
             .for_each(|(index, x)| *x = (C1_IM * d[index]).exp());
-        let k1 = magic_basis_transform(
-            matrix_multiply_4x4(
-                matrix_multiply_4x4(u_p.view(), p.view()).view(),
-                temp.view(),
-            )
-            .view(),
-            MagicBasisTransform::Into,
-        );
+        let k1 = magic_basis_transform(u_p.dot(&p).dot(&temp).view(), MagicBasisTransform::Into);
         let k2 = magic_basis_transform(p.t(), MagicBasisTransform::Into);
 
         #[allow(non_snake_case)]
