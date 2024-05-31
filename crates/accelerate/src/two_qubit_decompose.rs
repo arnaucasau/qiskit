@@ -1321,14 +1321,22 @@ impl TwoQubitBasisDecomposer {
     ) -> SmallVec<[Array2<Complex64>; 8]> {
         // FIXME: fix for z!=0 and c!=0 using closest reflection (not always in the Weyl chamber)
         smallvec![
-            transpose_conjugate(self.basis_decomposer.K2r.view()).dot(&target.K2r),
-            transpose_conjugate(self.basis_decomposer.K2l.view()).dot(&target.K2l),
-            target
-                .K1r
-                .dot(&transpose_conjugate(self.basis_decomposer.K1r.view())),
-            target
-                .K1l
-                .dot(&transpose_conjugate(self.basis_decomposer.K1l.view())),
+            matrix_multiply_2x2(
+                transpose_conjugate(self.basis_decomposer.K2r.view()).view(),
+                target.K2r.view()
+            ),
+            matrix_multiply_2x2(
+                transpose_conjugate(self.basis_decomposer.K2l.view()).view(),
+                target.K2l.view()
+            ),
+            matrix_multiply_2x2(
+                target.K1r.view(),
+                transpose_conjugate(self.basis_decomposer.K1r.view()).view()
+            ),
+            matrix_multiply_2x2(
+                target.K1l.view(),
+                transpose_conjugate(self.basis_decomposer.K1l.view()).view()
+            ),
         ]
     }
 
@@ -1337,12 +1345,18 @@ impl TwoQubitBasisDecomposer {
         target: &TwoQubitWeylDecomposition,
     ) -> SmallVec<[Array2<Complex64>; 8]> {
         smallvec![
-            self.q2r.dot(&target.K2r),
-            self.q2l.dot(&target.K2l),
-            self.q1ra.dot(&rz_matrix(2. * target.b)).dot(&self.q1rb),
-            self.q1la.dot(&rz_matrix(-2. * target.a)).dot(&self.q1lb),
-            target.K1r.dot(&self.q0r),
-            target.K1l.dot(&self.q0l),
+            matrix_multiply_2x2(self.q2r.view(), target.K2r.view()),
+            matrix_multiply_2x2(self.q2l.view(), target.K2l.view()),
+            matrix_multiply_2x2(
+                matrix_multiply_2x2(self.q1ra.view(), rz_matrix(2. * target.b).view()).view(),
+                self.q1rb.view()
+            ),
+            matrix_multiply_2x2(
+                matrix_multiply_2x2(self.q1la.view(), rz_matrix(-2. * target.a).view()).view(),
+                self.q1lb.view()
+            ),
+            matrix_multiply_2x2(target.K1r.view(), self.q0r.view()),
+            matrix_multiply_2x2(target.K1l.view(), self.q0l.view()),
         ]
     }
 
@@ -1351,14 +1365,23 @@ impl TwoQubitBasisDecomposer {
         target: &TwoQubitWeylDecomposition,
     ) -> SmallVec<[Array2<Complex64>; 8]> {
         smallvec![
-            self.u3r.dot(&target.K2r),
-            self.u3l.dot(&target.K2l),
-            self.u2ra.dot(&rz_matrix(2. * target.b)).dot(&self.u2rb),
-            self.u2la.dot(&rz_matrix(-2. * target.a)).dot(&self.u2lb),
-            self.u1ra.dot(&rz_matrix(-2. * target.c)).dot(&self.u1rb),
+            matrix_multiply_2x2(self.u3r.view(), target.K2r.view()),
+            matrix_multiply_2x2(self.u3l.view(), target.K2l.view()),
+            matrix_multiply_2x2(
+                matrix_multiply_2x2(self.u2ra.view(), rz_matrix(2. * target.b).view()).view(),
+                self.u2rb.view()
+            ),
+            matrix_multiply_2x2(
+                matrix_multiply_2x2(self.u2la.view(), rz_matrix(-2. * target.a).view()).view(),
+                self.u2lb.view()
+            ),
+            matrix_multiply_2x2(
+                matrix_multiply_2x2(self.u1ra.view(), rz_matrix(-2. * target.c).view()).view(),
+                self.u1rb.view()
+            ),
             self.u1l.clone(),
-            target.K1r.dot(&self.u0r),
-            target.K1l.dot(&self.u0l),
+            matrix_multiply_2x2(target.K1r.view(), self.u0r.view()),
+            matrix_multiply_2x2(target.K1l.view(), self.u0l.view()),
         ]
     }
 
@@ -1397,11 +1420,23 @@ impl TwoQubitBasisDecomposer {
                 [euler_angles[2], euler_angles[0], euler_angles[1]]
             })
             .collect();
-        let mut euler_matrix_q0 = rx_matrix(euler_q0[0][1]).dot(&rz_matrix(euler_q0[0][0]));
-        euler_matrix_q0 = rz_matrix(euler_q0[0][2] + euler_q0[1][0] + PI2).dot(&euler_matrix_q0);
+        let mut euler_matrix_q0 = matrix_multiply_2x2(
+            rx_matrix(euler_q0[0][1]).view(),
+            rz_matrix(euler_q0[0][0]).view(),
+        );
+        euler_matrix_q0 = matrix_multiply_2x2(
+            rz_matrix(euler_q0[0][2] + euler_q0[1][0] + PI2).view(),
+            euler_matrix_q0.view(),
+        );
         self.append_1q_sequence(&mut gates, &mut global_phase, euler_matrix_q0.view(), 0);
-        let mut euler_matrix_q1 = rz_matrix(euler_q1[0][1]).dot(&rx_matrix(euler_q1[0][0]));
-        euler_matrix_q1 = rx_matrix(euler_q1[0][2] + euler_q1[1][0]).dot(&euler_matrix_q1);
+        let mut euler_matrix_q1 = matrix_multiply_2x2(
+            rz_matrix(euler_q1[0][1]).view(),
+            rx_matrix(euler_q1[0][0]).view(),
+        );
+        euler_matrix_q1 = matrix_multiply_2x2(
+            rx_matrix(euler_q1[0][2] + euler_q1[1][0]).view(),
+            euler_matrix_q1.view(),
+        );
         self.append_1q_sequence(&mut gates, &mut global_phase, euler_matrix_q1.view(), 1);
         gates.push(("cx".to_string(), smallvec![], smallvec![0, 1]));
         gates.push(("sx".to_string(), smallvec![], smallvec![0]));
@@ -1414,13 +1449,19 @@ impl TwoQubitBasisDecomposer {
         gates.push(("rz".to_string(), smallvec![euler_q1[1][1]], smallvec![1]));
         global_phase += PI2;
         gates.push(("cx".to_string(), smallvec![], smallvec![0, 1]));
-        let mut euler_matrix_q0 =
-            rx_matrix(euler_q0[2][1]).dot(&rz_matrix(euler_q0[1][2] + euler_q0[2][0] + PI2));
-        euler_matrix_q0 = rz_matrix(euler_q0[2][2]).dot(&euler_matrix_q0);
+        let mut euler_matrix_q0 = matrix_multiply_2x2(
+            rx_matrix(euler_q0[2][1]).view(),
+            rz_matrix(euler_q0[1][2] + euler_q0[2][0] + PI2).view(),
+        );
+        euler_matrix_q0 =
+            matrix_multiply_2x2(rz_matrix(euler_q0[2][2]).view(), euler_matrix_q0.view());
         self.append_1q_sequence(&mut gates, &mut global_phase, euler_matrix_q0.view(), 0);
-        let mut euler_matrix_q1 =
-            rz_matrix(euler_q1[2][1]).dot(&rx_matrix(euler_q1[1][2] + euler_q1[2][0]));
-        euler_matrix_q1 = rx_matrix(euler_q1[2][2]).dot(&euler_matrix_q1);
+        let mut euler_matrix_q1 = matrix_multiply_2x2(
+            rz_matrix(euler_q1[2][1]).view(),
+            rx_matrix(euler_q1[1][2] + euler_q1[2][0]).view(),
+        );
+        euler_matrix_q1 =
+            matrix_multiply_2x2(rx_matrix(euler_q1[2][2]).view(), euler_matrix_q1.view());
         self.append_1q_sequence(&mut gates, &mut global_phase, euler_matrix_q1.view(), 1);
         Some(TwoQubitGateSequence {
             gates,
@@ -1481,21 +1522,30 @@ impl TwoQubitBasisDecomposer {
         let x02_add = x12 - euler_q0[1][0];
         let x12_is_half_pi = abs_diff_eq!(x12, PI2, epsilon = atol);
 
-        let mut euler_matrix_q0 = rx_matrix(euler_q0[0][1]).dot(&rz_matrix(euler_q0[0][0]));
+        let mut euler_matrix_q0 = matrix_multiply_2x2(
+            rx_matrix(euler_q0[0][1]).view(),
+            rz_matrix(euler_q0[0][0]).view(),
+        );
         if x12_is_non_zero && x12_is_pi_mult {
-            euler_matrix_q0 = rz_matrix(euler_q0[0][2] - x02_add).dot(&euler_matrix_q0);
+            euler_matrix_q0 = matrix_multiply_2x2(
+                rz_matrix(euler_q0[0][2] - x02_add).view(),
+                euler_matrix_q0.view(),
+            );
         } else {
-            euler_matrix_q0 = rz_matrix(euler_q0[0][2] + euler_q0[1][0]).dot(&euler_matrix_q0);
+            euler_matrix_q0 = matrix_multiply_2x2(
+                rz_matrix(euler_q0[0][2] + euler_q0[1][0]).view(),
+                euler_matrix_q0.view(),
+            );
         }
-        euler_matrix_q0 = aview2(&HGATE).dot(&euler_matrix_q0);
+        euler_matrix_q0 = matrix_multiply_2x2(aview2(&HGATE), euler_matrix_q0.view());
         self.append_1q_sequence(&mut gates, &mut global_phase, euler_matrix_q0.view(), 0);
 
         let rx_0 = rx_matrix(euler_q1[0][0]);
         let rz = rz_matrix(euler_q1[0][1]);
         let rx_1 = rx_matrix(euler_q1[0][2] + euler_q1[1][0]);
-        let mut euler_matrix_q1 = rz.dot(&rx_0);
-        euler_matrix_q1 = rx_1.dot(&euler_matrix_q1);
-        euler_matrix_q1 = aview2(&HGATE).dot(&euler_matrix_q1);
+        let mut euler_matrix_q1 = matrix_multiply_2x2(rz.view(), rx_0.view());
+        euler_matrix_q1 = matrix_multiply_2x2(rx_1.view(), euler_matrix_q1.view());
+        euler_matrix_q1 = matrix_multiply_2x2(aview2(&HGATE), euler_matrix_q1.view());
         self.append_1q_sequence(&mut gates, &mut global_phase, euler_matrix_q1.view(), 1);
 
         gates.push(("cx".to_string(), smallvec![], smallvec![1, 0]));
@@ -1556,14 +1606,20 @@ impl TwoQubitBasisDecomposer {
             return None;
         }
         gates.push(("cx".to_string(), smallvec![], smallvec![1, 0]));
-        let mut euler_matrix = rz_matrix(euler_q0[2][2] + euler_q0[3][0]).dot(&aview2(&HGATE));
-        euler_matrix = rx_matrix(euler_q0[3][1]).dot(&euler_matrix);
-        euler_matrix = rz_matrix(euler_q0[3][2]).dot(&euler_matrix);
+        let mut euler_matrix = matrix_multiply_2x2(
+            rz_matrix(euler_q0[2][2] + euler_q0[3][0]).view(),
+            aview2(&HGATE),
+        );
+        euler_matrix = matrix_multiply_2x2(rx_matrix(euler_q0[3][1]).view(), euler_matrix.view());
+        euler_matrix = matrix_multiply_2x2(rz_matrix(euler_q0[3][2]).view(), euler_matrix.view());
         self.append_1q_sequence(&mut gates, &mut global_phase, euler_matrix.view(), 0);
 
-        let mut euler_matrix = rx_matrix(euler_q1[2][2] + euler_q1[3][0]).dot(&aview2(&HGATE));
-        euler_matrix = rz_matrix(euler_q1[3][1]).dot(&euler_matrix);
-        euler_matrix = rx_matrix(euler_q1[3][2]).dot(&euler_matrix);
+        let mut euler_matrix = matrix_multiply_2x2(
+            rx_matrix(euler_q1[2][2] + euler_q1[3][0]).view(),
+            aview2(&HGATE),
+        );
+        euler_matrix = matrix_multiply_2x2(rz_matrix(euler_q1[3][1]).view(), euler_matrix.view());
+        euler_matrix = matrix_multiply_2x2(rx_matrix(euler_q1[3][2]).view(), euler_matrix.view());
         self.append_1q_sequence(&mut gates, &mut global_phase, euler_matrix.view(), 1);
 
         let out_unitary = compute_unitary(&gates, global_phase);
@@ -1672,7 +1728,10 @@ static K12L_ARR: [[Complex64; 2]; 2] = [
 ];
 
 fn decomp0_inner(target: &TwoQubitWeylDecomposition) -> SmallVec<[Array2<Complex64>; 8]> {
-    smallvec![target.K1r.dot(&target.K2r), target.K1l.dot(&target.K2l),]
+    smallvec![
+        matrix_multiply_2x2(target.K1r.view(), target.K2r.view()),
+        matrix_multiply_2x2(target.K1l.view(), target.K2l.view()),
+    ]
 }
 
 #[pymethods]
@@ -1799,26 +1858,35 @@ impl TwoQubitBasisDecomposer {
         let k2ld = transpose_conjugate(basis_decomposer.K2l.view());
         let k2rd = transpose_conjugate(basis_decomposer.K2r.view());
         // Pre-build the fixed parts of the matrices used in 3-part decomposition
-        let u0l = k31l.dot(&k1ld);
-        let u0r = k31r.dot(&k1rd);
-        let u1l = k2ld.dot(&k32l_k21l).dot(&k1ld);
-        let u1ra = k2rd.dot(&k32r);
-        let u1rb = k21r.dot(&k1rd);
-        let u2la = k2ld.dot(&k22l);
-        let u2lb = k11l.dot(&k1ld);
-        let u2ra = k2rd.dot(&k22r);
-        let u2rb = k11r.dot(&k1rd);
-        let u3l = k2ld.dot(&k12l);
-        let u3r = k2rd.dot(&k12r);
+        let u0l = matrix_multiply_2x2(k31l.view(), k1ld.view());
+        let u0r = matrix_multiply_2x2(k31r.view(), k1rd.view());
+        let u1l = matrix_multiply_2x2(
+            matrix_multiply_2x2(k2ld.view(), k32l_k21l.view()).view(),
+            k1ld.view(),
+        );
+        let u1ra = matrix_multiply_2x2(k2rd.view(), k32r.view());
+        let u1rb = matrix_multiply_2x2(k21r.view(), k1rd.view());
+        let u2la = matrix_multiply_2x2(k2ld.view(), k22l.view());
+        let u2lb = matrix_multiply_2x2(k11l.view(), k1ld.view());
+        let u2ra = matrix_multiply_2x2(k2rd.view(), k22r.view());
+        let u2rb = matrix_multiply_2x2(k11r.view(), k1rd.view());
+        let u3l = matrix_multiply_2x2(k2ld.view(), k12l.view());
+        let u3r = matrix_multiply_2x2(k2rd.view(), k12r.view());
         // Pre-build the fixed parts of the matrices used in the 2-part decomposition
-        let q0l = transpose_conjugate(k12l.view()).dot(&k1ld);
-        let q0r = transpose_conjugate(k12r.view()).dot(&ipz).dot(&k1rd);
-        let q1la = k2ld.dot(&transpose_conjugate(k11l.view()));
-        let q1lb = k11l.dot(&k1ld);
-        let q1ra = k2rd.dot(&ipz).dot(&transpose_conjugate(k11r.view()));
-        let q1rb = k11r.dot(&k1rd);
-        let q2l = k2ld.dot(&k12l);
-        let q2r = k2rd.dot(&k12r);
+        let q0l = matrix_multiply_2x2(transpose_conjugate(k12l.view()).view(), k1ld.view());
+        let q0r = matrix_multiply_2x2(
+            matrix_multiply_2x2(transpose_conjugate(k12r.view()).view(), ipz.view()).view(),
+            k1rd.view(),
+        );
+        let q1la = matrix_multiply_2x2(k2ld.view(), transpose_conjugate(k11l.view()).view());
+        let q1lb = matrix_multiply_2x2(k11l.view(), k1ld.view());
+        let q1ra = matrix_multiply_2x2(
+            matrix_multiply_2x2(k2rd.view(), ipz.view()).view(),
+            transpose_conjugate(k11r.view()).view(),
+        );
+        let q1rb = matrix_multiply_2x2(k11r.view(), k1rd.view());
+        let q2l = matrix_multiply_2x2(k2ld.view(), k12l.view());
+        let q2r = matrix_multiply_2x2(k2rd.view(), k12r.view());
 
         Ok(TwoQubitBasisDecomposer {
             gate,
