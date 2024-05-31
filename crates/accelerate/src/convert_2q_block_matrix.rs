@@ -19,7 +19,7 @@ use numpy::ndarray::Array2;
 use numpy::{IntoPyArray, PyArray2, PyReadonlyArray2};
 use smallvec::SmallVec;
 
-use crate::common::{change_basis, kron_identity_x_matrix, kron_matrix_x_identity};
+use crate::common::{change_basis, kron_identity_x_matrix, kron_matrix_x_identity, matrix_multiply_4x4};
 
 /// Return the matrix Operator resulting from a block of Instructions.
 #[pyfunction]
@@ -48,8 +48,8 @@ pub fn blocks_to_matrix(
             _ => None,
         };
         matrix = match result {
-            Some(result) => result.dot(&matrix),
-            None => op_matrix.dot(&matrix),
+            Some(result) => matrix_multiply_4x4(result.view(), matrix.view()),
+            None => matrix_multiply_4x4(op_matrix.view(), matrix.view()),
         };
     }
     Ok(matrix.into_pyarray_bound(py).unbind())
