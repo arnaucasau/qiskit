@@ -20,6 +20,8 @@ use numpy::ndarray::{aview2, Array2, ArrayView2};
 use numpy::{IntoPyArray, PyArray2, PyReadonlyArray2};
 use smallvec::SmallVec;
 
+use crate::common::{change_basis, kron_identity_x_matrix, kron_matrix_x_identity};
+
 static ONE_QUBIT_IDENTITY: [[Complex64; 2]; 2] = [
     [Complex64::new(1., 0.), Complex64::new(0., 0.)],
     [Complex64::new(0., 0.), Complex64::new(1., 0.)],
@@ -46,8 +48,8 @@ pub fn blocks_to_matrix(
         let op_matrix = op_matrix.as_array();
 
         let result = match q_list.as_slice() {
-            [0] => Some(kron(&identity, &op_matrix)),
-            [1] => Some(kron(&op_matrix, &identity)),
+            [0] => Some(kron_identity_x_matrix(op_matrix.view())),
+            [1] => Some(kron_matrix_x_identity(op_matrix.view())),
             [1, 0] => Some(change_basis(op_matrix)),
             [] => Some(Array2::eye(4)),
             _ => None,
@@ -58,20 +60,6 @@ pub fn blocks_to_matrix(
         };
     }
     Ok(matrix.into_pyarray_bound(py).unbind())
-}
-
-/// Switches the order of qubits in a two qubit operation.
-#[inline]
-pub fn change_basis(matrix: ArrayView2<Complex64>) -> Array2<Complex64> {
-    let mut trans_matrix: Array2<Complex64> = matrix.reversed_axes().to_owned();
-    for index in 0..trans_matrix.ncols() {
-        trans_matrix.swap([1, index], [2, index]);
-    }
-    trans_matrix = trans_matrix.reversed_axes();
-    for index in 0..trans_matrix.ncols() {
-        trans_matrix.swap([1, index], [2, index]);
-    }
-    trans_matrix
 }
 
 #[pymodule]

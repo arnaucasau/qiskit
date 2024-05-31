@@ -39,7 +39,7 @@ use numpy::PyReadonlyArray2;
 use numpy::{IntoPyArray, ToPyArray};
 use pyo3::pybacked::PyBackedStr;
 
-use crate::convert_2q_block_matrix::change_basis;
+use crate::common::{change_basis, kron_identity_x_matrix, kron_matrix_x_identity};
 use crate::euler_one_qubit_decomposer::{
     angles_from_unitary, det_one_qubit, unitary_to_gate_sequence_inner, EulerBasis,
     OneQubitGateSequence, ANGLE_ZERO_EPSILON,
@@ -209,7 +209,7 @@ fn decompose_two_qubit_product_gate(
     r.mapv_inplace(|x| x / det_r.sqrt());
     let r_t_conj: Array2<Complex64> = transpose_conjugate(r.view());
     let eye = aview2(&ONE_QUBIT_IDENTITY);
-    let mut temp = kron(&eye, &r_t_conj);
+    let mut temp = kron_identity_x_matrix(r_t_conj.view());
     temp = special_unitary.dot(&temp);
     let mut l = temp.slice(s![..;2, ..;2]).to_owned();
     let det_l = det_one_qubit(l.view());
@@ -412,8 +412,8 @@ fn compute_unitary(sequence: &TwoQubitSequenceVec, global_phase: f64) -> Array2<
         })
         .for_each(|(op_matrix, q_list)| {
             let result = match q_list.as_slice() {
-                [0] => Some(kron(&identity, &op_matrix)),
-                [1] => Some(kron(&op_matrix, &identity)),
+                [0] => Some(kron_identity_x_matrix(op_matrix.view())),
+                [1] => Some(kron_matrix_x_identity(op_matrix.view())),
                 [1, 0] => Some(change_basis(op_matrix.view())),
                 [] => Some(Array2::eye(4)),
                 _ => None,
