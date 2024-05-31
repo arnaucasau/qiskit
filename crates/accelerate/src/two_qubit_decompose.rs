@@ -32,7 +32,6 @@ use std::ops::Deref;
 use faer::Side::Lower;
 use faer::{prelude::*, scale, ComplexField, Mat, MatRef};
 use faer_ext::{IntoFaer, IntoFaerComplex, IntoNdarray, IntoNdarrayComplex};
-use ndarray::linalg::kron;
 use ndarray::prelude::*;
 use ndarray::Zip;
 use numpy::PyReadonlyArray2;
@@ -208,7 +207,6 @@ fn decompose_two_qubit_product_gate(
     }
     r.mapv_inplace(|x| x / det_r.sqrt());
     let r_t_conj: Array2<Complex64> = transpose_conjugate(r.view());
-    let eye = aview2(&ONE_QUBIT_IDENTITY);
     let mut temp = kron_identity_x_matrix(r_t_conj.view());
     temp = special_unitary.dot(&temp);
     let mut l = temp.slice(s![..;2, ..;2]).to_owned();
@@ -391,7 +389,6 @@ static XGATE: [[Complex64; 2]; 2] = [
 ];
 
 fn compute_unitary(sequence: &TwoQubitSequenceVec, global_phase: f64) -> Array2<Complex64> {
-    let identity = aview2(&ONE_QUBIT_IDENTITY);
     let phase = Complex64::new(0., global_phase).exp();
     let mut matrix = Array2::from_diag(&arr1(&[phase, phase, phase, phase]));
     sequence

@@ -15,17 +15,11 @@ use pyo3::wrap_pyfunction;
 use pyo3::Python;
 
 use num_complex::Complex64;
-use numpy::ndarray::linalg::kron;
-use numpy::ndarray::{aview2, Array2, ArrayView2};
+use numpy::ndarray::Array2;
 use numpy::{IntoPyArray, PyArray2, PyReadonlyArray2};
 use smallvec::SmallVec;
 
 use crate::common::{change_basis, kron_identity_x_matrix, kron_matrix_x_identity};
-
-static ONE_QUBIT_IDENTITY: [[Complex64; 2]; 2] = [
-    [Complex64::new(1., 0.), Complex64::new(0., 0.)],
-    [Complex64::new(0., 0.), Complex64::new(1., 0.)],
-];
 
 /// Return the matrix Operator resulting from a block of Instructions.
 #[pyfunction]
@@ -34,11 +28,10 @@ pub fn blocks_to_matrix(
     py: Python,
     op_list: Vec<(PyReadonlyArray2<Complex64>, SmallVec<[u8; 2]>)>,
 ) -> PyResult<Py<PyArray2<Complex64>>> {
-    let identity = aview2(&ONE_QUBIT_IDENTITY);
     let input_matrix = op_list[0].0.as_array();
     let mut matrix: Array2<Complex64> = match op_list[0].1.as_slice() {
-        [0] => kron(&identity, &input_matrix),
-        [1] => kron(&input_matrix, &identity),
+        [0] => kron_identity_x_matrix(input_matrix),
+        [1] => kron_matrix_x_identity(input_matrix),
         [0, 1] => input_matrix.to_owned(),
         [1, 0] => change_basis(input_matrix),
         [] => Array2::eye(4),
