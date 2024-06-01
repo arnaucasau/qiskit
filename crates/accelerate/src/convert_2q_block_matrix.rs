@@ -19,7 +19,9 @@ use numpy::ndarray::Array2;
 use numpy::{IntoPyArray, PyArray2, PyReadonlyArray2};
 use smallvec::SmallVec;
 
-use crate::common::{change_basis, kron_identity_x_matrix, kron_matrix_x_identity, matrix_multiply_4x4};
+use crate::common::{
+    change_basis, kron_identity_x_matrix, kron_matrix_x_identity, matrix_multiply_4x4,
+};
 
 /// Return the matrix Operator resulting from a block of Instructions.
 #[pyfunction]

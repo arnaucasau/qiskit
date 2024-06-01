@@ -39,8 +39,8 @@ use numpy::{IntoPyArray, ToPyArray};
 use pyo3::pybacked::PyBackedStr;
 
 use crate::common::{
-    change_basis, kron_identity_x_matrix, kron_matrix_x_identity, matrix_multiply_2x2,
-    matrix_multiply_4x4,
+    change_basis, determinant_4x4, kron_identity_x_matrix, kron_matrix_x_identity,
+    matrix_multiply_2x2, matrix_multiply_4x4,
 };
 use crate::euler_one_qubit_decomposer::{
     angles_from_unitary, det_one_qubit, unitary_to_gate_sequence_inner, EulerBasis,
@@ -60,7 +60,7 @@ const PI4: f64 = PI / 4.0;
 const PI32: f64 = 3.0 * PI2;
 const TWO_PI: f64 = 2.0 * PI;
 
-const C1: c64 = c64 { re: 1.0, im: 0.0 };
+const C1: Complex64 = Complex64 { re: 1.0, im: 0.0 };
 
 pub static ONE_QUBIT_IDENTITY: [[Complex64; 2]; 2] = [
     [Complex64::new(1., 0.), Complex64::new(0., 0.)],
@@ -144,12 +144,8 @@ fn magic_basis_transform(
     }
 }
 
-fn transform_from_magic_basis(u: Mat<c64>) -> Mat<c64> {
-    let unitary: ArrayView2<Complex64> = u.as_ref().into_ndarray_complex();
+fn transform_from_magic_basis(unitary: ArrayView2<Complex64>) -> Array2<Complex64> {
     magic_basis_transform(unitary, MagicBasisTransform::OutOf)
-        .view()
-        .into_faer_complex()
-        .to_owned()
 }
 
 // faer::c64 and num_complex::Complex<f64> are both structs
@@ -230,10 +226,12 @@ fn decompose_two_qubit_product_gate(
     Ok((l, r, phase))
 }
 
-fn __weyl_coordinates(unitary: MatRef<c64>) -> [f64; 3] {
-    let uscaled = scale(C1 / unitary.determinant().powf(0.25)) * unitary;
-    let uup = transform_from_magic_basis(uscaled);
-    let mut darg: Vec<_> = (uup.transpose() * &uup)
+fn __weyl_coordinates(unitary: ArrayView2<Complex64>) -> [f64; 3] {
+    let uscaled = (C1 / determinant_4x4(unitary).powf(0.25)) * &unitary;
+    let uup = transform_from_magic_basis(uscaled.view());
+    let mut darg: Vec<_> = matrix_multiply_4x4(uup.t(), uup.view())
+        .view()
+        .into_faer_complex()
         .complex_eigenvalues()
         .into_iter()
         .map(|x: c64| -x.arg() / 2.0)
@@ -286,11 +284,11 @@ pub fn _num_basis_gates(
     basis_fidelity: f64,
     unitary: PyReadonlyArray2<Complex<f64>>,
 ) -> usize {
-    let u = unitary.as_array().into_faer_complex();
+    let u = unitary.as_array();
     __num_basis_gates(basis_b, basis_fidelity, u)
 }
 
-fn __num_basis_gates(basis_b: f64, basis_fidelity: f64, unitary: MatRef<c64>) -> usize {
+fn __num_basis_gates(basis_b: f64, basis_fidelity: f64, unitary: ArrayView2<Complex64>) -> usize {
     let [a, b, c] = __weyl_coordinates(unitary);
     let traces = [
         c64::new(
@@ -634,7 +632,7 @@ impl TwoQubitWeylDecomposition {
 
         let mut u = unitary_matrix.as_array().to_owned();
         let unitary_matrix = unitary_matrix.as_array().to_owned();
-        let det_u = u.view().into_faer_complex().determinant().to_num_complex();
+        let det_u = determinant_4x4(u.view());
         let det_pow = det_u.powf(-0.25);
         u.mapv_inplace(|x| x * det_pow);
         let mut global_phase = det_u.arg() / 4.;
@@ -730,7 +728,7 @@ impl TwoQubitWeylDecomposition {
             let slice_b = p_orig.slice_mut(s![.., *item]);
             Zip::from(slice_a).and(slice_b).for_each(::std::mem::swap);
         }
-        if p.view().into_faer_complex().determinant().re < 0. {
+        if determinant_4x4(p.view()).re < 0. {
             p.slice_mut(s![.., -1]).mapv_inplace(|x| -x);
         }
         let mut temp: Array2<Complex64> = Array2::zeros((4, 4));
